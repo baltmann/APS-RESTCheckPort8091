@@ -1,5 +1,13 @@
-$port = 8091
+$port    = 8091
+$logFile = "D:\CW_log\APS_RESTCheckPort8091.txt"
 $connStr = "Server=AUPDC-CTW01P;Database=CountDb;Trusted_Connection=yes;Encrypt=True;TrustServerCertificate=True;"
+
+function Write-Log ($message, $color = "White") {
+    Write-Host $message -ForegroundColor $color
+    Add-Content -Path $logFile -Value $message
+}
+
+"$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') --- APS Port 8091 Check ---" | Out-File $logFile -Encoding utf8
 
 # --- Query APS devices from CountDb ---
 $conn = New-Object System.Data.SqlClient.SqlConnection($connStr)
@@ -19,8 +27,8 @@ while ($reader.Read()) {
 $reader.Close()
 $conn.Close()
 
-Write-Host ("{0,-5} {1,-12} {2,-18} {3}" -f "No", "SiteId", "IP", "Result")
-Write-Host ("{0,-5} {1,-12} {2,-18} {3}" -f "--", "------", "--", "------")
+Write-Log ("{0,-5} {1,-12} {2,-18} {3}" -f "No", "SiteId", "IP", "Result")
+Write-Log ("{0,-5} {1,-12} {2,-18} {3}" -f "--", "------", "--", "------")
 
 foreach ($device in $devices) {
     $ip     = $device.IP
@@ -29,7 +37,7 @@ foreach ($device in $devices) {
     # --- TCP port check ---
     $tcp = Test-NetConnection -ComputerName $ip -Port $port -WarningAction SilentlyContinue
     if (-not $tcp.TcpTestSucceeded) {
-        Write-Host ("$prefix FAIL: port $port closed") -ForegroundColor Red
+        Write-Log "$prefix FAIL: port $port closed" "Red"
         continue
     }
 
@@ -40,8 +48,8 @@ foreach ($device in $devices) {
 
     try {
         $response = Invoke-RestMethod -Uri $uri -Method Post -Headers $headers -Body $body -SkipCertificateCheck
-        Write-Host ("$prefix OK") -ForegroundColor Green
+        Write-Log "$prefix OK" "Green"
     } catch {
-        Write-Host ("$prefix FAIL: port open, auth failed") -ForegroundColor Yellow
+        Write-Log "$prefix FAIL: port open, auth failed" "Yellow"
     }
 }
