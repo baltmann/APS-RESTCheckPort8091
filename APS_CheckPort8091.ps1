@@ -1,26 +1,45 @@
-# APS device to check
-$ip = "192.168.1.105"
 $port = 8091
+$connStr = "Server=AUPDC-CTW01P;Database=CountDb;Trusted_Connection=yes;Encrypt=True;TrustServerCertificate=True;"
 
-# --- TCP port check ---
-$tcp = Test-NetConnection -ComputerName $ip -Port $port -WarningAction SilentlyContinue
-if (-not $tcp.TcpTestSucceeded) {
-    Write-Host "FAIL: Port $port is not reachable on $ip" -ForegroundColor Red
-    exit 1
+# --- Query APS devices from CountDb ---
+$conn = New-Object System.Data.SqlClient.SqlConnection($connStr)
+$conn.Open()
+$cmd = $conn.CreateCommand()
+$cmd.CommandText = "SELECT SiteId, IP FROM location WHERE mac LIKE '000b%' AND enabled = 1"
+$reader = $cmd.ExecuteReader()
+
+$devices = @()
+while ($reader.Read()) {
+    $devices += [PSCustomObject]@{
+        SiteId = $reader["SiteId"]
+        IP     = $reader["IP"]
+    }
 }
-Write-Host "OK: Port $port is open on $ip" -ForegroundColor Green
+$reader.Close()
+$conn.Close()
 
-# --- JWT auth check ---
-$uri = "https://$ip`:$port/auth"
+Write-Host ("{0,-12} {1,-18} {2}" -f "SiteId", "IP", "Result")
+Write-Host ("{0,-12} {1,-18} {2}" -f "------", "--", "------")
 
-$headers = @{ "Content-Type" = "application/json;charset=UTF-8" }
-$body = @{ username = "admin"; password = "817King!"; exp = "300" } | ConvertTo-Json -Depth 10
+foreach ($device in $devices) {
+    $ip = $device.IP
 
-try {
-    $response = Invoke-RestMethod -Uri $uri -Method Post -Headers $headers -Body $body -SkipCertificateCheck
-    $jwt = $response.access_token
-    Write-Host "OK: JWT retrieved successfully" -ForegroundColor Green
-    Write-Host "Token: $jwt"
-} catch {
-    Write-Host "FAIL: Port is open but auth failed. Error: $_" -ForegroundColor Red
+    # --- TCP port check ---
+    $tcp = Test-NetConnection -ComputerName $ip -Port $port -WarningAction SilentlyContinue
+    if (-not $tcp.TcpTestSucceeded) {
+        Write-Host ("{0,-12} {1,-18} {2}" -f $device.SiteId, $ip, "FAIL: port $port closed") -ForegroundColor Red
+        continue
+    }
+
+    # --- JWT auth check ---
+    $uri = "https://$ip`:$port/auth"
+    $headers = @{ "Content-Type" = "application/json;charset=UTF-8" }
+    $body = @{ username = "admin"; password = "817King!"; exp = "300" } | ConvertTo-Json -Depth 10
+
+    try {
+        $response = Invoke-RestMethod -Uri $uri -Method Post -Headers $headers -Body $body -SkipCertificateCheck
+        Write-Host ("{0,-12} {1,-18} {2}" -f $device.SiteId, $ip, "OK") -ForegroundColor Green
+    } catch {
+        Write-Host ("{0,-12} {1,-18} {2}" -f $device.SiteId, $ip, "FAIL: port open, auth failed") -ForegroundColor Yellow
+    }
 }
