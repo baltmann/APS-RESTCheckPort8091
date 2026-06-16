@@ -13,23 +13,11 @@ Write-Host "OK: Port $port is open on $ip" -ForegroundColor Green
 # --- JWT auth check ---
 $uri = "https://$ip`:$port/auth"
 
-Add-Type @"
-using System.Net;
-using System.Security.Cryptography.X509Certificates;
-public class TrustAllCertificatesPolicy : ICertificatePolicy {
-    public bool CheckValidationResult(
-        ServicePoint srvPoint, X509Certificate certificate, WebRequest request, int certificateProblem) {
-        return true;
-    }
-}
-"@
-[System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertificatesPolicy
-
 $headers = @{ "Content-Type" = "application/json;charset=UTF-8" }
 $body = @{ username = "admin"; password = "817King!"; exp = "300" } | ConvertTo-Json -Depth 10
 
 try {
-    $response = Invoke-RestMethod -Uri $uri -Method Post -Headers $headers -Body $body
+    $response = Invoke-RestMethod -Uri $uri -Method Post -Headers $headers -Body $body -SkipCertificateCheck
     $jwt = $response.access_token
     Write-Host "OK: JWT retrieved successfully" -ForegroundColor Green
     Write-Host "Token: $jwt"
