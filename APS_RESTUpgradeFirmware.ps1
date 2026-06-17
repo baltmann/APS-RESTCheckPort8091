@@ -1,3 +1,5 @@
+$switch       = "dev"   # "dev" = desk unit only, "prod" = all devices from DB
+$devIP        = "192.168.1.105"
 $newFwVersion = "2.11.0.230"
 $packetUrl    = "https://hubpro.xovis.cloud/ps/downloads/aps-rs/aps-rs-firmware/2.11/Update-2.11.0.230-APS-RS.tar"
 $port         = 8091
@@ -11,25 +13,28 @@ function Write-Log ($message, $color = "White") {
 
 "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') --- APS Firmware Upgrade to $newFwVersion ---" | Out-File $logFile -Encoding utf8
 
-# --- Query devices needing upgrade from CountDb ---
-$conn = New-Object System.Data.SqlClient.SqlConnection($connStr)
-$conn.Open()
-$cmd = $conn.CreateCommand()
-$cmd.CommandText = "SELECT row_number() over (order by l.SiteId, l.IP) rn, l.SiteId, Contact Centre, l.IP, l.fw FROM location l JOIN sites s ON s.SiteId = l.SiteId WHERE l.mac LIKE '000b%' AND l.enabled = 1 AND l.fw < '$newFwVersion' ORDER BY l.SiteId"
-$reader = $cmd.ExecuteReader()
-
+# --- Build device list ---
 $devices = @()
-while ($reader.Read()) {
-    $devices += [PSCustomObject]@{
-        Rn     = $reader["rn"]
-        SiteId = $reader["SiteId"]
-        Centre = $reader["Centre"]
-        IP     = $reader["IP"]
-        DbFw   = $reader["fw"]
+if ($switch -eq "dev") {
+    $devices += [PSCustomObject]@{ Rn = 1; SiteId = "DEV"; Centre = "Desk"; IP = $devIP; DbFw = "0.0.0.0" }
+} else {
+    $conn = New-Object System.Data.SqlClient.SqlConnection($connStr)
+    $conn.Open()
+    $cmd = $conn.CreateCommand()
+    $cmd.CommandText = "SELECT row_number() over (order by l.SiteId, l.IP) rn, l.SiteId, Contact Centre, l.IP, l.fw FROM location l JOIN sites s ON s.SiteId = l.SiteId WHERE l.mac LIKE '000b%' AND l.enabled = 1 AND l.fw < '$newFwVersion' ORDER BY l.SiteId"
+    $reader = $cmd.ExecuteReader()
+    while ($reader.Read()) {
+        $devices += [PSCustomObject]@{
+            Rn     = $reader["rn"]
+            SiteId = $reader["SiteId"]
+            Centre = $reader["Centre"]
+            IP     = $reader["IP"]
+            DbFw   = $reader["fw"]
+        }
     }
+    $reader.Close()
+    $conn.Close()
 }
-$reader.Close()
-$conn.Close()
 
 Write-Log "Found $($devices.Count) device(s) with fw < $newFwVersion"
 Write-Log ("{0,-5} {1,-12} {2,-20} {3,-18} {4,-12} {5}" -f "No", "SiteId", "Centre", "IP", "Current FW", "Result")
