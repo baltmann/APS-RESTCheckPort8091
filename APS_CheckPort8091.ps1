@@ -53,3 +53,4 @@ foreach ($device in $devices) {
         Write-Log "$prefix FAIL: port open, auth failed" "Yellow"
     }
 }
+Add-Content -Path $logFile -Value "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') --- APS Port 8091 Check END ---"
