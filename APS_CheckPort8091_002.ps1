@@ -13,7 +13,7 @@ function Write-Log ($message, $color = "White") {
 $conn = New-Object System.Data.SqlClient.SqlConnection($connStr)
 $conn.Open()
 $cmd = $conn.CreateCommand()
-$cmd.CommandText = "SELECT row_number() over (order by l.SiteId, IP) rn, l.SiteId, [Contact Centre], IP FROM location l join sites s on s.SiteId=l.SiteId WHERE mac LIKE '000b%' AND enabled = 1 ORDER BY l.SiteId"
+$cmd.CommandText = "SELECT row_number() over (order by l.SiteId, IP) rn, l.SiteId, Contact Centre, IP FROM location l join sites s on s.SiteId=l.SiteId WHERE mac LIKE '000b%' AND enabled = 1 ORDER BY l.SiteId"
 $reader = $cmd.ExecuteReader()
 
 $devices = @()
@@ -21,7 +21,7 @@ while ($reader.Read()) {
     $devices += [PSCustomObject]@{
         Rn          = $reader["rn"]
         SiteId      = $reader["SiteId"]
-        ContactCode = $reader["Contact Centre"]
+        ContactCode = $reader["Centre"]
         IP          = $reader["IP"]
     }
 }
