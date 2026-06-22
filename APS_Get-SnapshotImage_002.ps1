@@ -1,4 +1,4 @@
-$dev     = 1    # 1 = desk APS only, 0 = all devices from DB
+$dev     = 0    # 1 = desk APS only, 0 = all devices from DB
 $devIP   = "192.168.1.109"
 $port    = 8091
 $logFile = if ($dev -eq 1) { "C:\CW_log\APS_GetSnapshotImage.txt" } else { "D:\CW_log\APS_GetSnapshotImage.txt" }
@@ -8,6 +8,37 @@ $connStr = "Server=AUPDC-CTW01P;Database=CountDb;Trusted_Connection=yes;Encrypt=
 function Write-Log ($message, $color = "White") {
     Write-Host $message -ForegroundColor $color
     Add-Content -Path $logFile -Value $message
+}
+
+function Add-Captions ($jpgPath, $hostname, $captionDt) {
+    Add-Type -AssemblyName System.Drawing
+    $ms  = [System.IO.MemoryStream]::new([System.IO.File]::ReadAllBytes($jpgPath))
+    $src = [System.Drawing.Bitmap]::new($ms)
+    $bmp = [System.Drawing.Bitmap]::new($src.Width, $src.Height, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $g   = [System.Drawing.Graphics]::FromImage($bmp)
+    $g.DrawImage($src, 0, 0)
+    $src.Dispose()
+
+    $total = 0; $count = 0; $step = 10
+    for ($y = 0; $y -lt $bmp.Height; $y += $step) {
+        for ($x = 0; $x -lt $bmp.Width; $x += $step) {
+            $p = $bmp.GetPixel($x, $y)
+            $total += 0.299 * $p.R + 0.587 * $p.G + 0.114 * $p.B
+            $count++
+        }
+    }
+    $textColor = if (($total / $count) -lt 128) { [System.Drawing.Color]::White } else { [System.Drawing.Color]::Black }
+
+    $font  = [System.Drawing.Font]::new("Arial", 14, [System.Drawing.FontStyle]::Bold)
+    $brush = [System.Drawing.SolidBrush]::new($textColor)
+
+    $g.DrawString($hostname, $font, $brush, 8, 8)
+    $dtSize = $g.MeasureString($captionDt, $font)
+    $g.DrawString($captionDt, $font, $brush, $bmp.Width - $dtSize.Width - 8, 8)
+
+    $g.Dispose(); $font.Dispose(); $brush.Dispose(); $ms.Dispose()
+    $bmp.Save($jpgPath, [System.Drawing.Imaging.ImageFormat]::Jpeg)
+    $bmp.Dispose()
 }
 
 
@@ -23,7 +54,7 @@ if ($dev -eq 1) {
     $conn = New-Object System.Data.SqlClient.SqlConnection($connStr)
     $conn.Open()
     $cmd = $conn.CreateCommand()
-    $cmd.CommandText = "SELECT row_number() over (order by l.SiteId, IP) rn, l.SiteId, Contact Centre, IP FROM location l join sites s on s.SiteId=l.SiteId WHERE mac LIKE '000b%' AND enabled = 1 ORDER BY l.SiteId"
+    $cmd.CommandText = "SELECT row_number() over (order by l.SiteId, IP) rn, l.SiteId, Contact Centre, IP, LEFT(Contact,3) + RIGHT('000' + CAST(PARSENAME(IP,1) AS VARCHAR), 3) Hostname FROM location l join sites s on s.SiteId=l.SiteId WHERE mac LIKE '000b%' AND enabled = 1 AND l.SiteId = 1 ORDER BY l.SiteId"
     $reader = $cmd.ExecuteReader()
     while ($reader.Read()) {
         $devices += [PSCustomObject]@{
@@ -63,7 +94,9 @@ foreach ($device in $devices) {
         continue
     }
 
-    $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+    $now       = Get-Date
+    $timestamp = $now.ToString('yyyyMMdd_HHmmss')
+    $captionDt = $now.ToString('yyyy-MM-dd HH:mm')
     $tempDir   = Join-Path $env:TEMP "aps_$($ip -replace '\.','_')_$timestamp"
     $tarFile   = "$tempDir.tar.gz"
 
@@ -81,6 +114,7 @@ foreach ($device in $devices) {
         } else {
             $jpgPath = "$snapDir\$($device.Hostname)_$timestamp.jpg"
             Copy-Item -Path $jpgFile.FullName -Destination $jpgPath
+            Add-Captions $jpgPath $device.Hostname $captionDt
             Write-Log "$prefix OK: $jpgPath" "Green"
         }
     } catch {
