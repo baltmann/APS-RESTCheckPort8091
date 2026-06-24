@@ -10,7 +10,7 @@ function Write-Log ($message, $color = "White") {
     Add-Content -Path $logFile -Value $message
 }
 
-function Add-Captions ($jpgPath, $hostname, $captionDt) {
+function Add-Captions ($jpgPath, $hostname, $description, $captionDt) {
     Add-Type -AssemblyName System.Drawing
     $ms  = [System.IO.MemoryStream]::new([System.IO.File]::ReadAllBytes($jpgPath))
     $src = [System.Drawing.Bitmap]::new($ms)
@@ -33,6 +33,8 @@ function Add-Captions ($jpgPath, $hostname, $captionDt) {
     $brush = [System.Drawing.SolidBrush]::new($textColor)
 
     $g.DrawString($hostname, $font, $brush, 8, 8)
+    $descSize = $g.MeasureString($description, $font)
+    $g.DrawString($description, $font, $brush, ($bmp.Width - $descSize.Width) / 2, 8)
     $dtSize = $g.MeasureString($captionDt, $font)
     $g.DrawString($captionDt, $font, $brush, $bmp.Width - $dtSize.Width - 8, 8)
 
@@ -48,12 +50,13 @@ if (-not (Test-Path $snapDir)) { New-Item -ItemType Directory -Path $snapDir | O
 # --- Build device list ---
 $devices = @()
 if ($dev -eq 1) {
-    $devices += [PSCustomObject]@{ Rn = 1; SiteId = "DEV"; ContactCode = "GEO"; IP = $devIP; Hostname = "GEO108" }
+    $devices += [PSCustomObject]@{ Rn = 1; SiteId = "DEV"; ContactCode = "GEO"; IP = $devIP; Hostname = "GEO108"; Description = "Dev Camera" }
 } else {
     $conn = New-Object System.Data.SqlClient.SqlConnection($connStr)
     $conn.Open()
     $cmd = $conn.CreateCommand()
-    $cmd.CommandText = "SELECT row_number() over (order by l.SiteId, IP) rn, l.SiteId, Contact Centre, IP, LEFT(Contact,3) + RIGHT('000' + CAST(PARSENAME(IP,1) AS VARCHAR), 3) Hostname FROM location l join sites s on s.SiteId=l.SiteId WHERE mac LIKE 'TODO%' AND enabled = 1 AND l.SiteId = 1 ORDER BY l.SiteId"
+    $cmd.CommandText = "SELECT row_number() over (order by l.SiteId, IP) rn, l.SiteId, Contact Centre, IP, Description, LEFT(Contact,3) + RIGHT('000' + CAST(PARSENAME(IP,1) AS VARCHAR), 3) Hostname FROM location l join sites s on s.SiteId=l.SiteId WHERE mac LIKE '006e%' AND enabled = 1 --AND l.SiteId = 1
+ORDER BY l.SiteId"
     $reader = $cmd.ExecuteReader()
     while ($reader.Read()) {
         $devices += [PSCustomObject]@{
@@ -61,6 +64,7 @@ if ($dev -eq 1) {
             SiteId      = $reader["SiteId"]
             ContactCode = $reader["Centre"]
             IP          = $reader["IP"]
+            Description = $reader["Description"]
             Hostname    = $reader["Hostname"]
         }
     }
@@ -96,7 +100,7 @@ foreach ($device in $devices) {
     try {
         $uri = "http://$ip/api/v5/singlesensor/view/images/background.jpg?json_int64_workaround=false&tracked_objects=false"
         Invoke-WebRequest -Uri $uri -Method Get -Headers $headers -OutFile $jpgPath -UseBasicParsing
-        Add-Captions $jpgPath $device.Hostname $captionDt
+        Add-Captions $jpgPath $device.Hostname $device.Description $captionDt
         Write-Log "$prefix OK: $jpgPath" "Green"
     } catch {
         Write-Log "$prefix FAIL: $_" "Yellow"
